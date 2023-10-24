@@ -1,9 +1,24 @@
 #ifndef __SERVER_H_
 #define __SERVER_H_
 
+#include <sys/socket.h>
+#include <sys/epoll.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <glog/logging.h>
+#include <iostream>
+#include <sys/uio.h>
+#include <errno.h>
+#include <string.h>
+
 #include <vector>
 #include <atomic>
-#include <pair>
+#include <map>
+#include <chrono>
+
+#include "statistic.h"
+#include "util.h"
+#include "static_vars.h"
 
 class BenchServer {
 public:
@@ -16,10 +31,14 @@ private:
   void SplitServerAddress();
   void InitEpoll();
   void InitListenSockets();
+  bool InitSingleListenSocket(const std::pair<std::string, int>& server_info);
+  int AcceptClient(int);
+  void ReceiveBytes(struct epoll_event*);
   std::string server_str_;
   std::vector<std::pair<std::string, int>> server_addr_vec_;
+  std::vector<int> listen_fd_vec_;
   int epoll_fd_;
-  atomic<bool> stop_{false};
+  std::atomic<bool> stop_{false};
 };
 
 #endif
