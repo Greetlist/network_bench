@@ -1,8 +1,13 @@
 add_rules("mode.debug", "mode.release")
 
+add_requires("glog", "gflags")
+
 target("network_bench")
+    add_packages("glog", "gflags")
     set_kind("binary")
-    add_files("src/*.cpp")
+    add_files("src/*.cc")
+    set_languages("c++17")
+    add_ldflags("-lpthread")
 
 --
 -- If you want to known more usage about xmake, please see https://xmake.io
