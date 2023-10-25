@@ -78,7 +78,7 @@ void BenchClient::ReceiveProcess() {
   LOG(INFO) << "Quit Receive Thread";
 }
 
-void BenchClient::SendProcess(std::unique_ptr<BenchStatistic>&& s) {
+void BenchClient::SendProcess(std::shared_ptr<BenchStatistic> s) {
   int second_count = 0;
   long current_second_send_bytes = 0;
   auto per_second_start_time = std::chrono::system_clock::now();
@@ -125,7 +125,7 @@ void BenchClient::SendProcess(std::unique_ptr<BenchStatistic>&& s) {
   shutdown(s->GetSocket(), SHUT_WR);
 }
 
-std::unique_ptr<BenchStatistic> BenchClient::Connect(const std::pair<std::string, int>& server_info) {
+std::shared_ptr<BenchStatistic> BenchClient::Connect(const std::pair<std::string, int>& server_info) {
   int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (socket_fd < 0) {
     LOG(INFO) << "Create Socket Error: " << strerror(errno);
@@ -144,7 +144,7 @@ std::unique_ptr<BenchStatistic> BenchClient::Connect(const std::pair<std::string
   set_nonblock(socket_fd);
 
   struct epoll_event ev;
-  std::unique_ptr<BenchStatistic> return_ptr = std::make_unique<BenchStatistic>(socket_fd);
+  std::shared_ptr<BenchStatistic> return_ptr = std::make_unique<BenchStatistic>(socket_fd);
   memset(&ev, 0, sizeof(ev));
   BenchStatistic* s = return_ptr.get();
   ev.data.ptr = static_cast<void*>(s);
@@ -157,12 +157,33 @@ std::unique_ptr<BenchStatistic> BenchClient::Connect(const std::pair<std::string
   return return_ptr;
 }
 
+void BenchClient::NotifyServerSendRate(std::shared_ptr<BenchStatistic> s) {
+  std::string rate_str = std::to_string(send_rate_bytes_);
+  uint32_t rate_str_len = rate_str.size();
+  uint32_t rate_str_len_network_byte = htonl(rate_str_len);
+  int total_send_len = sizeof(uint32_t) + rate_str_len;
+  char buf[total_send_len];
+  memcpy(buf, &rate_str_len_network_byte, sizeof(int));
+  memcpy(buf + sizeof(int), rate_str.c_str(), rate_str_len);
+
+  int send_count = 0;
+  struct iovec iov;
+  iov.iov_base = buf;
+  iov.iov_len = total_send_len;
+
+  while (send_count < total_send_len) {
+    int n_write = writev(s->GetSocket(), &iov, 1);
+    send_count += n_write;
+  }
+}
+
 void BenchClient::CreateSendThread() {
   for (const auto& server_info : server_addr_vec_) {
-    std::unique_ptr<BenchStatistic> s = Connect(server_info);
+    std::shared_ptr<BenchStatistic> s = Connect(server_info);
     if (s == nullptr) {
       return;
     }
+    NotifyServerSendRate(s);
     if (is_parallel_) {
       std::thread t = std::thread(&BenchClient::SendProcess, this, std::move(s));
       send_thread_vec_.emplace_back(std::move(t));

@@ -117,6 +117,9 @@ void BenchServer::Start() {
         AcceptClient(events[i].data.fd);
         continue;
       }
+      if (s->GetClientSendRate() == -1) {
+        ReadClientSendRate(&events[i]);
+      }
       int n_read = ReceiveBytes(&events[i]);
       if (n_read == 0) {
         epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, s->GetSocket(), NULL);
@@ -147,6 +150,20 @@ int BenchServer::AcceptClient(int listen_fd) {
     }
   }
   return 0;
+}
+
+void BenchServer::ReadClientSendRate(struct epoll_event* event) {
+  int read_bytes = 0;
+  BenchStatistic* s = static_cast<BenchStatistic*>(event->data.ptr);
+  uint32_t rate_str_len_network_byte;
+  read_bytes = read(s->GetSocket(), &rate_str_len_network_byte, sizeof(uint32_t));
+  uint32_t rate_str_len = ntohl(rate_str_len_network_byte);
+  char buf[rate_str_len];
+  read_bytes += read(s->GetSocket(), buf, rate_str_len);
+  s->GetClientSendRate() = std::stol(std::string(buf));
+  LOG(INFO)
+    << "Read Rate info Bytes count: " << read_bytes
+    << "Client Send Rate is: " << s->GetClientSendRate() / 1024.0 / 1024.0 << "MB/s.";
 }
 
 int BenchServer::ReceiveBytes(struct epoll_event* event) {

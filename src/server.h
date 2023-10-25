@@ -33,6 +33,7 @@ private:
   void InitListenSockets();
   bool InitSingleListenSocket(const std::pair<std::string, int>& server_info);
   int AcceptClient(int);
+  void ReadClientSendRate(struct epoll_event*);
   int ReceiveBytes(struct epoll_event*);
   std::string server_str_;
   std::vector<std::pair<std::string, int>> server_addr_vec_;

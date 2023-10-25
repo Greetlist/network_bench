@@ -30,9 +30,10 @@ public:
   void CreateSendThread();
   void WaitSendThread();
   void Start();
-  void SendProcess(std::unique_ptr<BenchStatistic>&&);
+  void SendProcess(std::shared_ptr<BenchStatistic>);
   void ReceiveProcess();
-  std::unique_ptr<BenchStatistic> Connect(const std::pair<std::string, int>&);
+  std::shared_ptr<BenchStatistic> Connect(const std::pair<std::string, int>&);
+  void NotifyServerSendRate(std::shared_ptr<BenchStatistic>);
 private:
   void SplitServerAddress();
   void CalculateRate();
