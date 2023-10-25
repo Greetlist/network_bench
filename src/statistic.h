@@ -1,10 +1,12 @@
 #ifndef __STATISTIC_H_
 #define __STATISTIC_H_
 
+#include <glog/logging.h>
+
 class BenchStatistic {
 public:
   explicit BenchStatistic(int client_fd);
-  ~BenchStatistic() = default;
+  ~BenchStatistic();
 
   long& GetTotalReceivedBytes() {return total_received_bytes;}
   long& GetTotalReceivedTime() {return total_received_time_ms_;}

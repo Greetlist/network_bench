@@ -67,8 +67,15 @@ void BenchClient::ReceiveProcess() {
 
       s->GetTotalReceivedTime() += duration_ms;
       s->GetTotalReceivedBytes() += n_read;
+
+      if (n_read == 0) {
+        LOG(INFO) << "Close Socket";
+        close(s->GetSocket());
+        epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, s->GetSocket(), NULL);
+      }
     }
   }
+  LOG(INFO) << "Quit Receive Thread";
 }
 
 void BenchClient::SendProcess(std::unique_ptr<BenchStatistic>&& s) {
@@ -76,17 +83,21 @@ void BenchClient::SendProcess(std::unique_ptr<BenchStatistic>&& s) {
   long current_second_send_bytes = 0;
   auto per_second_start_time = std::chrono::system_clock::now();
   while (true) {
-    char send_buf[BUFF_SIZE * 2];
-    struct iovec iov[2];
-    iov[0].iov_base = send_buf;
-    iov[0].iov_len = BUFF_SIZE;
-    iov[1].iov_base = send_buf + BUFF_SIZE;
-    iov[1].iov_len = BUFF_SIZE;
-    int n_write = writev(s->GetSocket(), iov, 2);
+    char send_buf[BUFF_SIZE];
+    int left_data_len = BUFF_SIZE;
+    int total_write_bytes = 0;
+    while (left_data_len > 0) {
+      struct iovec iov;
+      iov.iov_base = send_buf + BUFF_SIZE - left_data_len;
+      iov.iov_len = left_data_len;
+      int n_write = writev(s->GetSocket(), &iov, 1);
+      left_data_len -= n_write;
+      total_write_bytes += n_write;
+    }
 
     //计算当前秒已经发送的数据,大于发送速率就sleep
-    current_second_send_bytes += n_write;
-    s->GetTotalSendBytes() += n_write;
+    current_second_send_bytes += total_write_bytes;
+    s->GetTotalSendBytes() += total_write_bytes;
     auto time_elapse = std::chrono::system_clock::now() - per_second_start_time;
     auto milli_seconds = std::chrono::duration_cast<std::chrono::milliseconds>(time_elapse).count();
     if (milli_seconds <= 1000 && current_second_send_bytes >= send_rate_bytes_) {
@@ -111,8 +122,7 @@ void BenchClient::SendProcess(std::unique_ptr<BenchStatistic>&& s) {
       break;
     }
   }
-  close(s->GetSocket());
-  epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, s->GetSocket(), NULL);
+  shutdown(s->GetSocket(), SHUT_WR);
 }
 
 std::unique_ptr<BenchStatistic> BenchClient::Connect(const std::pair<std::string, int>& server_info) {
