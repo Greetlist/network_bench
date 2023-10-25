@@ -25,6 +25,7 @@ void BenchClient::CheckInput() {
 }
 
 void BenchClient::Init() {
+  LOG(INFO) << "Start As Client Mode";
   SplitServerAddress();
   CalculateRate();
   InitEpoll();
@@ -39,22 +40,80 @@ void BenchClient::InitEpoll() {
 }
 
 void BenchClient::Start() {
-  StartSendThread();
-  receive_thread_ = std::thread(&BenchClient::ReceiveThread, this);
+  receive_thread_ = std::thread(&BenchClient::ReceiveProcess, this);
+  CreateSendThread();
   WaitSendThread();
   is_stop_ = true;
-  WaitReceiveThread();
+  receive_thread_.join();
 }
 
-void BenchClient::MainProcess(const std::pair<std::string, int>& server_info) {
-  Connect(server_info);
+void BenchClient::ReceiveProcess() {
+  struct epoll_event events[1024];
+  while (!is_stop_) {
+    int nums = epoll_wait(epoll_fd_, events, 1024, -1);
+    for (int i = 0; i < nums; ++i) {
+      BenchStatistic* s = static_cast<BenchStatistic*>(events[i].data.ptr);
+      char buf[BUFF_SIZE * 2];
+      struct iovec iov[2];
+      iov[0].iov_base = buf;
+      iov[0].iov_len = BUFF_SIZE;
+      iov[1].iov_base = buf + BUFF_SIZE;
+      iov[1].iov_len = BUFF_SIZE;
+      auto start_time = std::chrono::system_clock::now();
+      int n_read = readv(s->GetSocket(), iov, 2);
+      auto end_time = std::chrono::system_clock::now();
+      auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+
+      s->GetTotalReceivedTime() += duration_ms;
+      s->GetTotalReceivedBytes() += n_read;
+    }
+  }
 }
 
-void BenchClient::Connect(const std::pair<std::string, int>& server_info) {
+void BenchClient::SendProcess(std::unique_ptr<BenchStatistic>&& s) {
+  int second_count = 0;
+  long current_second_send_bytes = 0;
+  auto per_second_start_time = std::chrono::system_clock::now();
+  while (true) {
+    char send_buf[BUFF_SIZE * 2];
+    struct iovec iov[2];
+    iov[0].iov_base = send_buf;
+    iov[0].iov_len = BUFF_SIZE;
+    iov[1].iov_base = send_buf + BUFF_SIZE;
+    iov[1].iov_len = BUFF_SIZE;
+    int n_write = writev(s->GetSocket(), iov, 2);
+
+    //计算当前秒已经发送的数据,大于发送速率就sleep
+    current_second_send_bytes += n_write;
+    s->GetTotalSendBytes() += n_write;
+    auto time_elapse = per_second_start_time - std::chrono::system_clock::now();
+    auto milli_seconds = std::chrono::duration_cast<std::chrono::milliseconds>(time_elapse).count();
+    if (milli_seconds <= 1000 && current_second_send_bytes >= send_rate_bytes_) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1000 - milli_seconds));
+    }
+
+    //如果发送已经超了一秒，重置当前秒的计数器
+    milli_seconds = std::chrono::duration_cast<std::chrono::milliseconds>(time_elapse).count();
+    if (milli_seconds >= 1000) {
+      s->GetTotalSendTime() += milli_seconds;
+      second_count += 1;
+      current_second_send_bytes = 0;
+      per_second_start_time = std::chrono::system_clock::now();
+    }
+
+    if (second_count >= send_duration_) {
+      break;
+    }
+  }
+  close(s->GetSocket());
+  epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, s->GetSocket(), NULL);
+}
+
+std::unique_ptr<BenchStatistic> BenchClient::Connect(const std::pair<std::string, int>& server_info) {
   int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (socket_fd < 0) {
-    LOG_INFO << "Create Socket Error: " << strerror(errno);
-    return;
+    LOG(INFO) << "Create Socket Error: " << strerror(errno);
+    return nullptr;
   }
   struct sockaddr_in addr;
   memset(&addr, 0, sizeof(struct sockaddr_in));
@@ -64,28 +123,33 @@ void BenchClient::Connect(const std::pair<std::string, int>& server_info) {
   int connect_status = connect(socket_fd, (struct sockaddr*)&addr, sizeof(struct sockaddr_in));
   if (connect_status < 0) {
     LOG(ERROR) << "Connect to [" << server_info.first << ":" << server_info.second << "] Error:" << strerror(errno);
-    return;
+    return nullptr;
   }
+  set_nonblock(socket_fd);
 
   struct epoll_event ev;
+  std::unique_ptr<BenchStatistic> return_ptr = std::make_unique<BenchStatistic>(socket_fd);
   memset(&ev, 0, sizeof(ev));
-  ev.data.fd = listen_fd;
+  BenchStatistic* s = return_ptr.get();
+  ev.data.ptr = static_cast<void*>(s);
   ev.events = EPOLLIN;
-  ss = epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, listen_fd, &ev);
+  int ss = epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, socket_fd, &ev);
   if (ss < 0) {
     LOG(INFO) << "Epoll Add Error: " << strerror(errno);
-    return;
+    return nullptr;
   }
+  return return_ptr;
 }
 
-void BenchClient::StartSendThread() {
-  if (is_parallel_) {
-    for (const auto& server_info : server_addr_vec_) {
-      std::thread t = std::thread(&BenchClient::MainProcess, this, server_addr_vec_);
-      send_thread_vec_.push_back(t);
+void BenchClient::CreateSendThread() {
+  for (const auto& server_info : server_addr_vec_) {
+    std::unique_ptr<BenchStatistic> s = Connect(server_info);
+    if (is_parallel_) {
+      std::thread t = std::thread(&BenchClient::SendProcess, this, std::move(s));
+      send_thread_vec_.emplace_back(std::move(t));
+    } else {
+      SendProcess(std::move(s));
     }
-  } else {
-
   }
 }
 
@@ -95,7 +159,7 @@ void BenchClient::WaitSendThread() {
   }
 }
 
-void BenchServer::SplitServerAddress() {
+void BenchClient::SplitServerAddress() {
   std::string servers_delimiter{","};
   size_t pos_start = 0, pos_end = 0;
   std::vector<std::string> cur_vec;

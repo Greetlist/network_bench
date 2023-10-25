@@ -11,7 +11,7 @@ public:
   long& GetTotalSendBytes() {return total_send_bytes;}
   long& GetTotalSendTime() {return total_send_time_ms_;}
 
-  int GetClient() {return client_fd_;}
+  int GetSocket() {return client_fd_;}
   void Clear();
 private:
   long total_received_bytes;

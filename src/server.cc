@@ -145,12 +145,21 @@ void BenchServer::ReceiveBytes(struct epoll_event* event) {
   iov[1].iov_base = buf + BUFF_SIZE;
   iov[1].iov_len = BUFF_SIZE;
   auto start_time = std::chrono::system_clock::now();
-  int n_read = readv(s->GetClient(), iov, 2);
+  int n_read = readv(s->GetSocket(), iov, 2);
   auto end_time = std::chrono::system_clock::now();
-
   auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
 
-  s->GetTotalTransmitTime() += duration_ms;
-  s->GetTotalBytes() += n_read;
+  s->GetTotalReceivedTime() += duration_ms;
+  s->GetTotalReceivedBytes() += n_read;
+
+  char send_buf[BUFF_SIZE * 2];
+  struct iovec write_iov[2];
+  write_iov[0].iov_base = send_buf;
+  write_iov[0].iov_len = BUFF_SIZE;
+  write_iov[1].iov_base = send_buf + BUFF_SIZE;
+  write_iov[1].iov_len = BUFF_SIZE;
+  int n_write = writev(s->GetSocket(), write_iov, 2);
+  s->GetTotalSendTime() += duration_ms;
+  s->GetTotalSendBytes() += n_write;
 }
 

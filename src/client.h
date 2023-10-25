@@ -1,12 +1,24 @@
 #ifndef __CLIENT_H_
 #define __CLIENT_H_
 
-#include <string>
 #include <stdlib.h>
+#include <sys/epoll.h>
+#include <sys/uio.h>
 #include <glog/logging.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+#include <string>
 #include <vector>
 #include <map>
 #include <atomic>
+#include <memory>
+#include <thread>
+
+#include "statistic.h"
+#include "util.h"
+#include "static_vars.h"
 
 class BenchClient {
 public:
@@ -15,11 +27,12 @@ public:
   void CheckInput();
   void Init();
   void InitEpoll();
-  void StartSendThread();
+  void CreateSendThread();
   void WaitSendThread();
   void Start();
-  void MainProcess(const std::pair<std::string, int>&);
-  void Connect(const std::pair<std::string, int>&);
+  void SendProcess(std::unique_ptr<BenchStatistic>&&);
+  void ReceiveProcess();
+  std::unique_ptr<BenchStatistic> Connect(const std::pair<std::string, int>&);
 private:
   void SplitServerAddress();
   void CalculateRate();
