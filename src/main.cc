@@ -10,7 +10,7 @@ DEFINE_string(listen_addr, "", "Run As Serer, server listen addresses");
 DEFINE_string(server_addr, "", "Run As Client, server address connect to");
 DEFINE_string(send_rate, "1M", "Exp: 1024K/10M/1G [Unit: (B/s)]");
 DEFINE_int32(send_duration, 10, "client send duration [Unit: (second)]");
-DEFINE_bool(parallel, true, "Is different client send in paralled mode");
+DEFINE_bool(parallel, false, "Is different client send in paralled mode");
 
 using namespace std;
 

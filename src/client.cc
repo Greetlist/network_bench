@@ -43,6 +43,7 @@ void BenchClient::Start() {
   receive_thread_ = std::thread(&BenchClient::ReceiveProcess, this);
   CreateSendThread();
   WaitSendThread();
+  LOG(INFO) << "Stop Send Threads";
   is_stop_ = true;
   receive_thread_.join();
 }
@@ -50,7 +51,7 @@ void BenchClient::Start() {
 void BenchClient::ReceiveProcess() {
   struct epoll_event events[1024];
   while (!is_stop_) {
-    int nums = epoll_wait(epoll_fd_, events, 1024, -1);
+    int nums = epoll_wait(epoll_fd_, events, 1024, 1000);
     for (int i = 0; i < nums; ++i) {
       BenchStatistic* s = static_cast<BenchStatistic*>(events[i].data.ptr);
       char buf[BUFF_SIZE * 2];
@@ -86,15 +87,20 @@ void BenchClient::SendProcess(std::unique_ptr<BenchStatistic>&& s) {
     //计算当前秒已经发送的数据,大于发送速率就sleep
     current_second_send_bytes += n_write;
     s->GetTotalSendBytes() += n_write;
-    auto time_elapse = per_second_start_time - std::chrono::system_clock::now();
+    auto time_elapse = std::chrono::system_clock::now() - per_second_start_time;
     auto milli_seconds = std::chrono::duration_cast<std::chrono::milliseconds>(time_elapse).count();
     if (milli_seconds <= 1000 && current_second_send_bytes >= send_rate_bytes_) {
+      LOG(INFO) << "Reach Send Rate Limit, Sleep for a while.";
       std::this_thread::sleep_for(std::chrono::milliseconds(1000 - milli_seconds));
     }
+    LOG(INFO) << "Current Sended Bytes: " << current_second_send_bytes << ", Send Rate: " << current_second_send_bytes / 1024.0 / 1024.0 << " MB/s";
 
     //如果发送已经超了一秒，重置当前秒的计数器
-    milli_seconds = std::chrono::duration_cast<std::chrono::milliseconds>(time_elapse).count();
-    if (milli_seconds >= 1000) {
+    auto current_elapse = \
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now() - per_second_start_time
+      ).count();
+    if (current_elapse >= 1000) {
       s->GetTotalSendTime() += milli_seconds;
       second_count += 1;
       current_second_send_bytes = 0;
@@ -144,6 +150,9 @@ std::unique_ptr<BenchStatistic> BenchClient::Connect(const std::pair<std::string
 void BenchClient::CreateSendThread() {
   for (const auto& server_info : server_addr_vec_) {
     std::unique_ptr<BenchStatistic> s = Connect(server_info);
+    if (s == nullptr) {
+      return;
+    }
     if (is_parallel_) {
       std::thread t = std::thread(&BenchClient::SendProcess, this, std::move(s));
       send_thread_vec_.emplace_back(std::move(t));
@@ -185,11 +194,12 @@ void BenchClient::CalculateRate() {
   std::string unit = send_rate_.substr(send_rate_.size() - 1);
   double value = std::stod(send_rate_.substr(0, send_rate_.size() - 1));
   if (unit == "K") {
-    send_rate_bytes_ = static_cast<long>(value);
+    send_rate_bytes_ = static_cast<long>(value) * 1024;
   } else if (unit == "M") {
-    send_rate_bytes_ = static_cast<long>(value * 1024);
-  } else {
     send_rate_bytes_ = static_cast<long>(value * 1024 * 1024);
+  } else {
+    send_rate_bytes_ = static_cast<long>(value * 1024 * 1024 * 1024);
   }
+  LOG(INFO) << "Send To Server With Rate: " << send_rate_bytes_ << "B/s";
 }
 

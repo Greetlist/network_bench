@@ -100,6 +100,12 @@ void BenchServer::Start() {
   while (!stop_) {
     int nums = epoll_wait(epoll_fd_, events, 1024, -1);
     for (int i = 0; i < nums; ++i) {
+      BenchStatistic* s = static_cast<BenchStatistic*>(events[i].data.ptr);
+      if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
+        LOG(ERROR) << "Client Quit With Error Event: [" << events[i].events << "]";
+        epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, s->GetSocket(), NULL);
+        continue;
+      }
       bool is_listen_fd = false;
       for (const auto& fd : listen_fd_vec_) {
         if (events[i].data.fd == fd) {
@@ -111,7 +117,13 @@ void BenchServer::Start() {
         AcceptClient(events[i].data.fd);
         continue;
       }
-      ReceiveBytes(&events[i]);
+      int n_read = ReceiveBytes(&events[i]);
+      if (n_read == 0) {
+        epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, s->GetSocket(), NULL);
+        LOG(INFO) << "Client Normal Quit";
+      } else {
+        LOG(INFO) << "Receive " << s->GetTotalReceivedBytes();
+      }
     }
   }
 }
@@ -136,7 +148,7 @@ int BenchServer::AcceptClient(int listen_fd) {
   return 0;
 }
 
-void BenchServer::ReceiveBytes(struct epoll_event* event) {
+int BenchServer::ReceiveBytes(struct epoll_event* event) {
   BenchStatistic* s = static_cast<BenchStatistic*>(event->data.ptr);
   char buf[BUFF_SIZE * 2];
   struct iovec iov[2];
@@ -161,5 +173,6 @@ void BenchServer::ReceiveBytes(struct epoll_event* event) {
   int n_write = writev(s->GetSocket(), write_iov, 2);
   s->GetTotalSendTime() += duration_ms;
   s->GetTotalSendBytes() += n_write;
+  return n_read;
 }
 
