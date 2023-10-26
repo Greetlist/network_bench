@@ -1,25 +1,23 @@
 #include "statistic.h"
 
-BenchStatistic::BenchStatistic(int client_fd) : total_received_bytes(0), total_received_time_ms_(0), total_send_bytes(0), total_send_time_ms_(0), client_send_rate_bytes_(-1), current_second_received_bytes_(0), current_second_send_bytes_(0), client_fd_(client_fd), need_reset_start_time_(true) {
+BenchStatistic::BenchStatistic(int client_fd) : total_received_bytes(0), total_received_time_ms_(0), total_send_bytes(0), total_send_time_ms_(0), client_send_rate_bytes_(-1), client_fd_(client_fd) {
+  rate_records_.push_back(RateRecord()); // for receive record
+  rate_records_.push_back(RateRecord()); // for send record;
 }
 
 BenchStatistic::~BenchStatistic() {
   LOG(INFO)
     << "Total Receive Data: " << total_received_bytes
     << ", Total Send Data: " << total_send_bytes;
-  int receive_record_len = receive_record_.size();
-  for (int i = 0; i < receive_record_len; ++i) {
-    LOG(INFO) << i << " s Receive Rate is: " << receive_record_[i] / 1024.0 / 1024.0 << "MB/s";
-  }
-  int send_record_len = send_record_.size();
-  for (int i = 0; i < send_record_len; ++i) {
-    LOG(INFO) << i << " s Send Rate is: " << send_record_[i] / 1024.0 / 1024.0 << "MB/s";
-  }
-}
 
-void BenchStatistic::ResetCurrentSecondRecord() {
-  current_second_received_bytes_ = 0;
-  current_second_send_bytes_ = 0;
+  int rate_record_len = rate_records_.size();
+  for (int i = 0; i < rate_record_len; ++i) {
+    RateRecord& record = rate_records_[i];
+    int total_record_len = record.total_records.size();
+    for (int i = 0; i < total_record_len; ++i) {
+      LOG(INFO) << i << " s " << (i == 0 ? "Receive" : "Send") << " Rate is: " << record.total_records[i] / 1024.0 / 1024.0 << "MB/s";
+    }
+  }
 }
 
 void BenchStatistic::Clear() {
@@ -27,4 +25,17 @@ void BenchStatistic::Clear() {
   total_received_time_ms_ = 0;
   total_send_bytes = 0;
   total_send_time_ms_ = 0;
+}
+
+void BenchStatistic::RecordCurrentSecondRate(Direction direction, long bytes) {
+  RateRecord& record = rate_records_[direction];
+  auto time_elapse_ms = \
+    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - record.record_start_time_point).count();
+  if (time_elapse_ms < 1000) {
+    record.current_second_record += bytes;
+    return;
+  }
+  record.record_start_time_point = std::chrono::system_clock::now();
+  record.total_records.push_back(record.current_second_record);
+  record.current_second_record = 0;
 }

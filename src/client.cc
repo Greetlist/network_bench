@@ -67,6 +67,7 @@ void BenchClient::ReceiveProcess() {
 
       s->GetTotalReceivedTime() += duration_ms;
       s->GetTotalReceivedBytes() += n_read;
+      s->RecordCurrentSecondRate(Direction::Receive, n_read);
 
       if (n_read == 0) {
         LOG(INFO) << "Close Socket";
@@ -94,6 +95,7 @@ void BenchClient::SendProcess(std::shared_ptr<BenchStatistic> s) {
       left_data_len -= n_write;
       total_write_bytes += n_write;
     }
+    s->RecordCurrentSecondRate(Direction::Send, total_write_bytes);
 
     //计算当前秒已经发送的数据,大于发送速率就sleep
     current_second_send_bytes += total_write_bytes;

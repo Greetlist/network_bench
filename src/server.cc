@@ -120,21 +120,8 @@ void BenchServer::Start() {
       if (s->GetClientSendRate() == -1) {
         ReadClientSendRate(&events[i]);
       }
-      if (s->GetResetFlag()) {
-        s->ResetRecordStartTime();
-        s->GetResetFlag() = false;
-      }
       int n_read = ReceiveBytes(&events[i]);
-      auto time_elapse_ms = \
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - s->GetStartRecordTime()).count();
-      LOG(INFO) << time_elapse_ms;
-      if (time_elapse_ms >= 1000) {
-        s->GetResetFlag() = true;
-        s->GetReceiveRecord().push_back(s->GetCurrentSecondReceiveRecord());
-        s->GetSendRecord().push_back(s->GetCurrentSecondSendRecord());
-        s->GetCurrentSecondReceiveRecord() = 0;
-        s->GetCurrentSecondSendRecord() = 0;
-      }
+      s->RecordCurrentSecondRate(Direction::Receive, n_read);
       if (n_read == 0) {
         epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, s->GetSocket(), NULL);
         close(s->GetSocket());
@@ -196,7 +183,6 @@ int BenchServer::ReceiveBytes(struct epoll_event* event) {
 
   s->GetTotalReceivedTime() += duration_ms;
   s->GetTotalReceivedBytes() += n_read;
-  s->GetCurrentSecondReceiveRecord() += n_read;
 
   char send_buf[n_read];
   int left_data_len = n_read;
@@ -211,7 +197,7 @@ int BenchServer::ReceiveBytes(struct epoll_event* event) {
   }
   s->GetTotalSendTime() += duration_ms;
   s->GetTotalSendBytes() += total_write_bytes;
-  s->GetCurrentSecondSendRecord() += total_write_bytes;
+  s->RecordCurrentSecondRate(Direction::Send, total_write_bytes);
   LOG(INFO) << "Total Send Bytes is: " << s->GetTotalSendBytes();
   return n_read;
 }
