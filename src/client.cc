@@ -60,12 +60,10 @@ void BenchClient::ReceiveProcess() {
       iov[0].iov_len = BUFF_SIZE;
       iov[1].iov_base = buf + BUFF_SIZE;
       iov[1].iov_len = BUFF_SIZE;
-      auto start_time = std::chrono::system_clock::now();
       int n_read = readv(s->GetSocket(), iov, 2);
-      auto end_time = std::chrono::system_clock::now();
-      auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-
-      s->GetTotalReceivedTime() += duration_ms;
+      if (n_read < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+        continue;
+      }
       s->GetTotalReceivedBytes() += n_read;
       s->RecordCurrentSecondRate(Direction::Receive, n_read);
 
@@ -92,6 +90,9 @@ void BenchClient::SendProcess(std::shared_ptr<BenchStatistic> s) {
       iov.iov_base = send_buf + BUFF_SIZE - left_data_len;
       iov.iov_len = left_data_len;
       int n_write = writev(s->GetSocket(), &iov, 1);
+      if (n_write < 0) {
+        continue;
+      }
       left_data_len -= n_write;
       total_write_bytes += n_write;
     }
@@ -102,11 +103,11 @@ void BenchClient::SendProcess(std::shared_ptr<BenchStatistic> s) {
     s->GetTotalSendBytes() += total_write_bytes;
     auto time_elapse = std::chrono::system_clock::now() - per_second_start_time;
     auto milli_seconds = std::chrono::duration_cast<std::chrono::milliseconds>(time_elapse).count();
+    LOG(INFO) << "Current Sended Bytes: " << current_second_send_bytes << ", Send Rate: " << current_second_send_bytes / 1024.0 / 1024.0 << " MB/s";
     if (milli_seconds <= 1000 && current_second_send_bytes >= send_rate_bytes_) {
       LOG(INFO) << "Reach Send Rate Limit, Sleep for a while.";
       std::this_thread::sleep_for(std::chrono::milliseconds(1000 - milli_seconds));
     }
-    LOG(INFO) << "Current Sended Bytes: " << current_second_send_bytes << ", Send Rate: " << current_second_send_bytes / 1024.0 / 1024.0 << " MB/s";
 
     //如果发送已经超了一秒，重置当前秒的计数器
     auto current_elapse = \
@@ -114,7 +115,6 @@ void BenchClient::SendProcess(std::shared_ptr<BenchStatistic> s) {
         std::chrono::system_clock::now() - per_second_start_time
       ).count();
     if (current_elapse >= 1000) {
-      s->GetTotalSendTime() += milli_seconds;
       second_count += 1;
       current_second_send_bytes = 0;
       per_second_start_time = std::chrono::system_clock::now();

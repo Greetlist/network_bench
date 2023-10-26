@@ -121,14 +121,15 @@ void BenchServer::Start() {
         ReadClientSendRate(&events[i]);
       }
       int n_read = ReceiveBytes(&events[i]);
+      if (n_read < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+        continue;
+      }
       s->RecordCurrentSecondRate(Direction::Receive, n_read);
       if (n_read == 0) {
         epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, s->GetSocket(), NULL);
         close(s->GetSocket());
         LOG(INFO) << "Client Normal Quit";
         delete s;
-      } else {
-        LOG(INFO) << "Receive " << s->GetTotalReceivedBytes();
       }
     }
   }
@@ -176,12 +177,11 @@ int BenchServer::ReceiveBytes(struct epoll_event* event) {
   iov[0].iov_len = BUFF_SIZE;
   iov[1].iov_base = buf + BUFF_SIZE;
   iov[1].iov_len = BUFF_SIZE;
-  auto start_time = std::chrono::system_clock::now();
   int n_read = readv(s->GetSocket(), iov, 2);
-  auto end_time = std::chrono::system_clock::now();
-  auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-
-  s->GetTotalReceivedTime() += duration_ms;
+  if (n_read < 0) {
+    return n_read;
+  }
+  //LOG(INFO) << "Read " << n_read << " Bytes";
   s->GetTotalReceivedBytes() += n_read;
 
   char send_buf[n_read];
@@ -192,13 +192,15 @@ int BenchServer::ReceiveBytes(struct epoll_event* event) {
     iov.iov_base = send_buf + n_read - left_data_len;
     iov.iov_len = left_data_len;
     int n_write = writev(s->GetSocket(), &iov, 1);
+    if (n_write < 0) {
+      continue;
+    }
     left_data_len -= n_write;
     total_write_bytes += n_write;
   }
-  s->GetTotalSendTime() += duration_ms;
   s->GetTotalSendBytes() += total_write_bytes;
   s->RecordCurrentSecondRate(Direction::Send, total_write_bytes);
-  LOG(INFO) << "Total Send Bytes is: " << s->GetTotalSendBytes();
+  //LOG(INFO) << "Total Send Bytes is: " << s->GetTotalSendBytes();
   return n_read;
 }
 
