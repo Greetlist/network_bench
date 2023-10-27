@@ -14,8 +14,8 @@ BenchStatistic::~BenchStatistic() {
   for (int i = 0; i < rate_record_len; ++i) {
     RateRecord& record = rate_records_[i];
     int total_record_len = record.total_records.size();
-    for (int i = 0; i < total_record_len; ++i) {
-      LOG(INFO) << i << " s " << (i == 0 ? "Receive" : "Send") << " Rate is: " << record.total_records[i] / 1024.0 / 1024.0 << "MB/s";
+    for (int j = 0; j < total_record_len; ++j) {
+      LOG(INFO) << j << " s " << (i == 0 ? "Receive" : "Send") << " Rate is: " << record.total_records[j] / 1024.0 / 1024.0 << "MB/s";
     }
   }
 }
