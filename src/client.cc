@@ -44,13 +44,12 @@ void BenchClient::Start() {
   CreateSendThread();
   WaitSendThread();
   LOG(INFO) << "Stop Send Threads";
-  is_stop_ = true;
   receive_thread_.join();
 }
 
 void BenchClient::ReceiveProcess() {
   struct epoll_event events[1024];
-  while (!is_stop_) {
+  while (true) {
     int nums = epoll_wait(epoll_fd_, events, 1024, 1000);
     for (int i = 0; i < nums; ++i) {
       BenchStatistic* s = static_cast<BenchStatistic*>(events[i].data.ptr);
@@ -70,14 +69,19 @@ void BenchClient::ReceiveProcess() {
       if (n_read == 0) {
         LOG(INFO) << "Close Socket";
         close(s->GetSocket());
+        alive_client_count_--;
         epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, s->GetSocket(), NULL);
+        delete s;
       }
+    }
+    if (alive_client_count_ <= 0) {
+      break;
     }
   }
   LOG(INFO) << "Quit Receive Thread";
 }
 
-void BenchClient::SendProcess(std::shared_ptr<BenchStatistic> s) {
+void BenchClient::SendProcess(BenchStatistic* s) {
   int second_count = 0;
   long current_second_send_bytes = 0;
   auto per_second_start_time = std::chrono::system_clock::now();
@@ -127,7 +131,7 @@ void BenchClient::SendProcess(std::shared_ptr<BenchStatistic> s) {
   shutdown(s->GetSocket(), SHUT_WR);
 }
 
-std::shared_ptr<BenchStatistic> BenchClient::Connect(const std::pair<std::string, int>& server_info) {
+BenchStatistic* BenchClient::Connect(const std::pair<std::string, int>& server_info) {
   int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (socket_fd < 0) {
     LOG(INFO) << "Create Socket Error: " << strerror(errno);
@@ -146,10 +150,9 @@ std::shared_ptr<BenchStatistic> BenchClient::Connect(const std::pair<std::string
   set_nonblock(socket_fd);
 
   struct epoll_event ev;
-  std::shared_ptr<BenchStatistic> return_ptr = std::make_unique<BenchStatistic>(socket_fd);
+  BenchStatistic* return_ptr = new BenchStatistic(socket_fd);
   memset(&ev, 0, sizeof(ev));
-  BenchStatistic* s = return_ptr.get();
-  ev.data.ptr = static_cast<void*>(s);
+  ev.data.ptr = static_cast<void*>(return_ptr);
   ev.events = EPOLLIN;
   int ss = epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, socket_fd, &ev);
   if (ss < 0) {
@@ -159,7 +162,7 @@ std::shared_ptr<BenchStatistic> BenchClient::Connect(const std::pair<std::string
   return return_ptr;
 }
 
-void BenchClient::NotifyServerSendRate(std::shared_ptr<BenchStatistic> s) {
+void BenchClient::NotifyServerSendRate(BenchStatistic* s) {
   std::string rate_str = std::to_string(send_rate_bytes_);
   uint32_t rate_str_len = rate_str.size();
   uint32_t rate_str_len_network_byte = htonl(rate_str_len);
@@ -181,18 +184,19 @@ void BenchClient::NotifyServerSendRate(std::shared_ptr<BenchStatistic> s) {
 
 void BenchClient::CreateSendThread() {
   for (const auto& server_info : server_addr_vec_) {
-    std::shared_ptr<BenchStatistic> s = Connect(server_info);
+    BenchStatistic* s = Connect(server_info);
     if (s == nullptr) {
       return;
     }
     NotifyServerSendRate(s);
     if (is_parallel_) {
-      std::thread t = std::thread(&BenchClient::SendProcess, this, std::move(s));
+      std::thread t = std::thread(&BenchClient::SendProcess, this, s);
       send_thread_vec_.emplace_back(std::move(t));
     } else {
-      SendProcess(std::move(s));
+      SendProcess(s);
     }
   }
+  alive_client_count_ = server_addr_vec_.size();
 }
 
 void BenchClient::WaitSendThread() {

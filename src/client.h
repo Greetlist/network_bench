@@ -30,10 +30,10 @@ public:
   void CreateSendThread();
   void WaitSendThread();
   void Start();
-  void SendProcess(std::shared_ptr<BenchStatistic>);
+  void SendProcess(BenchStatistic*);
   void ReceiveProcess();
-  std::shared_ptr<BenchStatistic> Connect(const std::pair<std::string, int>&);
-  void NotifyServerSendRate(std::shared_ptr<BenchStatistic>);
+  BenchStatistic* Connect(const std::pair<std::string, int>&);
+  void NotifyServerSendRate(BenchStatistic*);
 private:
   void SplitServerAddress();
   void CalculateRate();
@@ -42,8 +42,8 @@ private:
   long send_rate_bytes_;
   int send_duration_;
   int epoll_fd_;
+  int alive_client_count_;
   bool is_parallel_;
-  std::atomic<bool> is_stop_{false};
   std::vector<std::pair<std::string, int>> server_addr_vec_;
   std::vector<std::thread> send_thread_vec_;
   std::thread receive_thread_;
