@@ -1,5 +1,5 @@
 ## Project
-Network Traffic Bandwith Written in C++
+Network Traffic Bandwith Throughput Written in C++, inspired by [goben](https://github.com/udhos/goben).
 
 ## Compile
 In Project Root Directory
