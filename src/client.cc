@@ -40,6 +40,7 @@ void BenchClient::InitEpoll() {
 }
 
 void BenchClient::Start() {
+  alive_client_count_ = server_addr_vec_.size();
   receive_thread_ = std::thread(&BenchClient::ReceiveProcess, this);
   CreateSendThread();
   WaitSendThread();
@@ -50,7 +51,7 @@ void BenchClient::Start() {
 void BenchClient::ReceiveProcess() {
   struct epoll_event events[1024];
   while (true) {
-    int nums = epoll_wait(epoll_fd_, events, 1024, 1000);
+    int nums = epoll_wait(epoll_fd_, events, 1024, -1);
     for (int i = 0; i < nums; ++i) {
       BenchStatistic* s = static_cast<BenchStatistic*>(events[i].data.ptr);
       char buf[BUFF_SIZE * 2];
@@ -75,6 +76,7 @@ void BenchClient::ReceiveProcess() {
       }
     }
     if (alive_client_count_ <= 0) {
+      LOG(INFO) << alive_client_count_;
       break;
     }
   }
@@ -95,6 +97,7 @@ void BenchClient::SendProcess(BenchStatistic* s) {
       iov.iov_len = left_data_len;
       int n_write = writev(s->GetSocket(), &iov, 1);
       if (n_write < 0) {
+        //LOG(INFO) << "Error number: " << errno << ", msg: " << strerror(errno);
         continue;
       }
       left_data_len -= n_write;
@@ -128,6 +131,7 @@ void BenchClient::SendProcess(BenchStatistic* s) {
       break;
     }
   }
+  LOG(INFO) << "Shutdown Client Send Direction Traffic";
   shutdown(s->GetSocket(), SHUT_WR);
 }
 
@@ -151,12 +155,17 @@ BenchStatistic* BenchClient::Connect(const std::pair<std::string, int>& server_i
 
   struct epoll_event ev;
   BenchStatistic* return_ptr = new BenchStatistic(socket_fd);
+  if (return_ptr == nullptr) {
+    LOG(ERROR) << "Malloc memory Error: " << strerror(errno);
+    return nullptr;
+  }
   memset(&ev, 0, sizeof(ev));
   ev.data.ptr = static_cast<void*>(return_ptr);
   ev.events = EPOLLIN;
   int ss = epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, socket_fd, &ev);
   if (ss < 0) {
     LOG(INFO) << "Epoll Add Error: " << strerror(errno);
+    delete return_ptr;
     return nullptr;
   }
   return return_ptr;
@@ -186,6 +195,7 @@ void BenchClient::CreateSendThread() {
   for (const auto& server_info : server_addr_vec_) {
     BenchStatistic* s = Connect(server_info);
     if (s == nullptr) {
+      alive_client_count_--;
       return;
     }
     NotifyServerSendRate(s);
@@ -196,7 +206,6 @@ void BenchClient::CreateSendThread() {
       SendProcess(s);
     }
   }
-  alive_client_count_ = server_addr_vec_.size();
 }
 
 void BenchClient::WaitSendThread() {

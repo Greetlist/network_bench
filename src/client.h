@@ -42,7 +42,7 @@ private:
   long send_rate_bytes_;
   int send_duration_;
   int epoll_fd_;
-  int alive_client_count_;
+  std::atomic<int> alive_client_count_{0};
   bool is_parallel_;
   std::vector<std::pair<std::string, int>> server_addr_vec_;
   std::vector<std::thread> send_thread_vec_;
