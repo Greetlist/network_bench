@@ -1,6 +1,6 @@
 #include "server.h"
 
-BenchServer::BenchServer(const std::string& server_str) : server_str_(server_str) {
+BenchServer::BenchServer(const std::string& server_str, int read_block_size) : server_str_(server_str), read_block_size_(read_block_size) {
 }
 
 void BenchServer::Init() {
@@ -173,13 +173,11 @@ void BenchServer::ReadClientSendRate(struct epoll_event* event) {
 
 int BenchServer::ReceiveBytes(struct epoll_event* event) {
   BenchStatistic* s = static_cast<BenchStatistic*>(event->data.ptr);
-  char buf[BUFF_SIZE * 2];
-  struct iovec iov[2];
-  iov[0].iov_base = buf;
-  iov[0].iov_len = BUFF_SIZE;
-  iov[1].iov_base = buf + BUFF_SIZE;
-  iov[1].iov_len = BUFF_SIZE;
-  int n_read = readv(s->GetSocket(), iov, 2);
+  char buf[read_block_size_];
+  struct iovec iov;
+  iov.iov_base = buf;
+  iov.iov_len = read_block_size_;
+  int n_read = readv(s->GetSocket(), &iov, 1);
   if (n_read < 0) {
     return n_read;
   }

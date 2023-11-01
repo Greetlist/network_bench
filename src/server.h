@@ -22,7 +22,7 @@
 
 class BenchServer {
 public:
-  BenchServer(const std::string& server_str);
+  BenchServer(const std::string& server_str, int read_block_size);
   ~BenchServer() = default;
   void Init();
   void Start();
@@ -38,6 +38,7 @@ private:
   std::string server_str_;
   std::vector<std::pair<std::string, int>> server_addr_vec_;
   std::vector<int> listen_fd_vec_;
+  int read_block_size_;
   int epoll_fd_;
   std::atomic<bool> stop_{false};
 };

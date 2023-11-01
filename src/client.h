@@ -22,7 +22,7 @@
 
 class BenchClient {
 public:
-  BenchClient(const std::string& server_str, const std::string& send_rate, const int send_duration, bool is_parallel_);
+  BenchClient(const std::string& server_str, const std::string& send_rate, const int send_duration, int read_block_size, int write_block_size, bool is_parallel);
   ~BenchClient() = default;
   void CheckInput();
   void Init();
@@ -41,6 +41,8 @@ private:
   std::string send_rate_;
   long send_rate_bytes_;
   int send_duration_;
+  int read_block_size_;
+  int write_block_size_;
   int epoll_fd_;
   std::atomic<int> alive_client_count_{0};
   bool is_parallel_;

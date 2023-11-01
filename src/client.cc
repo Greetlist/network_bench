@@ -1,6 +1,6 @@
 #include "client.h"
 
-BenchClient::BenchClient(const std::string& server_str, const std::string& send_rate, const int send_duration, bool is_parallel) : server_str_(server_str), send_rate_(send_rate), send_rate_bytes_(0), send_duration_(send_duration), is_parallel_(is_parallel)  {
+BenchClient::BenchClient(const std::string& server_str, const std::string& send_rate, const int send_duration, int read_block_size, int write_block_size, bool is_parallel) : server_str_(server_str), send_rate_(send_rate), send_rate_bytes_(0), send_duration_(send_duration), read_block_size_(read_block_size), write_block_size_(write_block_size), is_parallel_(is_parallel)  {
 }
 
 void BenchClient::CheckInput() {
@@ -54,13 +54,11 @@ void BenchClient::ReceiveProcess() {
     int nums = epoll_wait(epoll_fd_, events, 1024, -1);
     for (int i = 0; i < nums; ++i) {
       BenchStatistic* s = static_cast<BenchStatistic*>(events[i].data.ptr);
-      char buf[BUFF_SIZE * 2];
-      struct iovec iov[2];
-      iov[0].iov_base = buf;
-      iov[0].iov_len = BUFF_SIZE;
-      iov[1].iov_base = buf + BUFF_SIZE;
-      iov[1].iov_len = BUFF_SIZE;
-      int n_read = readv(s->GetSocket(), iov, 2);
+      char buf[read_block_size_];
+      struct iovec iov;
+      iov.iov_base = buf;
+      iov.iov_len = read_block_size_;
+      int n_read = readv(s->GetSocket(), &iov, 1);
       if (n_read < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
         continue;
       }
@@ -88,12 +86,12 @@ void BenchClient::SendProcess(BenchStatistic* s) {
   long current_second_send_bytes = 0;
   auto per_second_start_time = std::chrono::system_clock::now();
   while (true) {
-    char send_buf[BUFF_SIZE];
-    int left_data_len = BUFF_SIZE;
+    char send_buf[write_block_size_];
+    int left_data_len = write_block_size_;
     int total_write_bytes = 0;
     while (left_data_len > 0) {
       struct iovec iov;
-      iov.iov_base = send_buf + BUFF_SIZE - left_data_len;
+      iov.iov_base = send_buf + write_block_size_ - left_data_len;
       iov.iov_len = left_data_len;
       int n_write = writev(s->GetSocket(), &iov, 1);
       if (n_write < 0) {
