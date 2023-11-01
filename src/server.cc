@@ -60,7 +60,7 @@ bool BenchServer::InitSingleListenSocket(const std::pair<std::string, int>& serv
   server.sin_port = htons(server_info.second);
   server.sin_addr.s_addr = inet_addr(server_info.first.c_str());
 
-  bool flag = true;
+  int flag = 1;
   int l = sizeof(flag);
   setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &flag, l);
   int ss = bind(listen_fd, (struct sockaddr*)&server, sizeof(server));
