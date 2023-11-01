@@ -74,7 +74,7 @@ void BenchClient::ReceiveProcess() {
       }
     }
     if (alive_client_count_ <= 0) {
-      LOG(INFO) << alive_client_count_;
+      LOG(INFO) << "Alive client count is: " << alive_client_count_ << ", Quit Epoll Loop.";
       break;
     }
   }
